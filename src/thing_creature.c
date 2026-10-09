@@ -100,6 +100,7 @@
 #include "lua_triggers.h"
 #include "lua_cfg_funcs.h"
 #include "room_workshop.h"
+#include "sm64_mario.h"
 
 #include "keeperfx.hpp"
 #include "kfx/profiling/KfxProfilingC.h"
@@ -6594,16 +6595,22 @@ TngUpdateRet update_creature(struct Thing *thing)
         }
     }
 
-    if (update_creature_movements(thing))
+    if (sm64_mario_controls(thing))
     {
-        SYNCDBG(19,"The %s index %d acceleration is (%d,%d,%d)",thing_model_name(thing),
-            (int)thing->index,(int)cctrl->moveaccel.x.val,(int)cctrl->moveaccel.y.val,(int)cctrl->moveaccel.z.val);
-        block_voluntary_move_onto_toxic_terrain(thing, cctrl);
-        thing->velocity.x.val += cctrl->moveaccel.x.val;
-        thing->velocity.y.val += cctrl->moveaccel.y.val;
-        thing->velocity.z.val += cctrl->moveaccel.z.val;
+        sm64_mario_update(thing);
+    } else
+    {
+        if (update_creature_movements(thing))
+        {
+            SYNCDBG(19,"The %s index %d acceleration is (%d,%d,%d)",thing_model_name(thing),
+                (int)thing->index,(int)cctrl->moveaccel.x.val,(int)cctrl->moveaccel.y.val,(int)cctrl->moveaccel.z.val);
+            block_voluntary_move_onto_toxic_terrain(thing, cctrl);
+            thing->velocity.x.val += cctrl->moveaccel.x.val;
+            thing->velocity.y.val += cctrl->moveaccel.y.val;
+            thing->velocity.z.val += cctrl->moveaccel.z.val;
+        }
+        move_creature(thing);
     }
-    move_creature(thing);
     if (flag_is_set(thing->alloc_flags, TAlF_IsControlled))
     {
         if (!flag_is_set(cctrl->creature_control_flags, CCFlg_MoveY))

@@ -104,6 +104,7 @@
 #include "spdigger_stack.h"
 #include "frontmenu_ingame_map.h"
 #include "lua_triggers.h"
+#include "sm64_mario.h"
 
 #include "keeperfx.hpp"
 #include "post_inc.h"
@@ -1309,6 +1310,8 @@ void process_user_creature_control_packet_control(NetUserId user)
     ThingIndex target_idx;
     if (can_process_creature_input(cctng))
     {
+        if (sm64_mario_controls(cctng))
+            sm64_mario_set_input(pckt->control_flags);
         long speed_limit = get_creature_speed(cctng);
         if ((pckt->control_flags & PCtr_MoveUp) != 0)
         {

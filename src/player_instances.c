@@ -64,6 +64,7 @@
 #include "lua_triggers.h"
 #include "lens_api.h"
 #include "timer.h"
+#include "sm64_mario.h"
 
 #include "keeperfx.hpp"
 #include "post_inc.h"
@@ -932,6 +933,9 @@ void leave_creature_as_controller(struct PlayerInfo *player, struct Thing *thing
     }
     clear_selected_thing(player);
     set_player_mode(player, PVT_DungeonTop);
+    if (sm64_mario_controls(thing)) {
+        sm64_mario_stop();
+    }
     if (is_my_player(player)) {
         setup_eye_lens(0);
     }

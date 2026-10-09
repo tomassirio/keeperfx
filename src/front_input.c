@@ -78,6 +78,7 @@
 #include "console_cmd.h"
 #include "engine_redraw.h"
 #include "timer.h"
+#include "sm64_mario.h"
 
 #include "keeperfx.hpp"
 
@@ -2942,7 +2943,8 @@ static void get_creature_control_nonaction_inputs(void)
             creature_movement_accum_y = 0.0f;
         }
         
-        if (flag_is_set(thing->movement_flags, TMvF_Flying))
+        // Mario uses Ascend/Descend as jump/crouch
+        if (flag_is_set(thing->movement_flags, TMvF_Flying) || sm64_mario_controls(thing))
         {
             if (is_game_key_pressed(Gkey_Ascend, false, true))
                 set_packet_control(pckt, PCtr_Ascend);

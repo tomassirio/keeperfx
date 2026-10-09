@@ -75,6 +75,7 @@
 #include "net_game.h"
 #include "kjm_input.h"
 #include "timer.h"
+#include "sm64_mario.h"
 #include "post_inc.h"
 
 #ifdef __cplusplus
@@ -2624,6 +2625,33 @@ TbBool cmd_possession_lock(PlayerNumber plyr_idx, char * args)
     return true;
 }
 
+TbBool cmd_mario(PlayerNumber plyr_idx, char * args)
+{
+    if (!console_cmd_cheats_allowed(plyr_idx)) {
+        targeted_message_add(MsgType_Player, plyr_idx, plyr_idx, GUI_MESSAGES_DELAY, "require 'cheat mode'");
+        return false;
+    }
+    // libsm64 physics is float based and would desync network games
+    if (game.game_kind != GKind_LocalGame) {
+        targeted_message_add(MsgType_Player, plyr_idx, plyr_idx, GUI_MESSAGES_DELAY, "Mario is single player only");
+        return false;
+    }
+    struct PlayerInfo * player = get_player(plyr_idx);
+    struct Thing * thing = thing_get(player->controlled_thing_idx);
+    if ((get_player_view_type(player) != PVT_CreatureContrl) || !thing_is_creature(thing)) {
+        targeted_message_add(MsgType_Player, plyr_idx, plyr_idx, GUI_MESSAGES_DELAY, "Possess a creature first");
+        return false;
+    }
+    if (sm64_mario_controls(thing)) {
+        sm64_mario_stop();
+        targeted_message_add(MsgType_Player, plyr_idx, plyr_idx, GUI_MESSAGES_DELAY, "Mario off");
+        return true;
+    }
+    const char * err = sm64_mario_start(thing);
+    targeted_message_add(MsgType_Player, plyr_idx, plyr_idx, GUI_MESSAGES_DELAY, "%s", (err != NULL) ? err : "It's-a me, Mario!");
+    return (err == NULL);
+}
+
 TbBool cmd_possession_unlock(PlayerNumber plyr_idx, char * args)
 {
     struct PlayerInfo * player = get_player(plyr_idx);
@@ -2904,6 +2932,7 @@ static const struct ConsoleCommand console_commands[] = {
     { "player.colour", cmd_player_colour, NULL },
     { "possession.lock", cmd_possession_lock, NULL },
     { "possession.unlock", cmd_possession_unlock, NULL },
+    { "mario", cmd_mario, NULL },
     { "string.show", cmd_string_show, NULL },
     { "quick.show", cmd_quick_show, NULL },
     { "toggle.tooltip.land.coord", cmd_toggle_tooltip_land_coord, NULL },
