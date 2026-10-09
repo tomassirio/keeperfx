@@ -288,6 +288,9 @@ TbBool control_creature_as_controller(struct PlayerInfo *player, struct Thing *t
         SYNCDBG(7,"Controlling creature '%s', eye_effect=%d", crconf->name, crconf->eye_effect);
         setup_eye_lens(crconf->eye_effect);
     }
+    if (thing->class_id == TCls_Creature) {
+        sm64_mario_auto_start(thing);
+    }
     return true;
 }
 

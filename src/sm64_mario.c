@@ -31,6 +31,7 @@
 #include "map_columns.h"
 #include "map_data.h"
 #include "bflib_sndlib.h"
+#include "config_creature.h"
 #include "config_settings.h"
 #include "packets.h"
 #include "thing_data.h"
@@ -317,6 +318,22 @@ TbBool sm64_mario_controls(const struct Thing *thing)
     return (mario_id >= 0) && (thing->index == mario_thing) && flag_is_set(thing->alloc_flags, TAlF_IsControlled);
 }
 
+void sm64_mario_auto_start(struct Thing *thing)
+{
+    // Single player only: libsm64's physics is float based and would desync network games
+    static TbBool unavailable;
+    if (unavailable || (game.game_kind != GKind_LocalGame)
+     || (thing->model != get_players_special_digger_model(thing->owner)))
+        return;
+    const char *err = sm64_mario_start(thing);
+    if (err != NULL)
+    {
+        JUSTLOG("Possessed imp stays an imp: %s", err);
+        // Missing sm64.dll or ROM won't fix itself; a bad spot (no floor) might next time
+        unavailable = !sm64_ready;
+    }
+}
+
 void sm64_mario_set_input(uint32_t control_flags)
 {
     mario_input = control_flags;
@@ -342,8 +359,13 @@ void sm64_mario_update(struct Thing *thing)
         rebuild_collision();
     }
 
-    // The game resumes its own music after its pause menu or regaining focus; keep it quiet
-    pause_music();
+    // The game resumes its own music after its pause menu or losing focus, both of which stop
+    // game turns. Re-pause it only after such a gap: pausing every turn takes the mixer's lock.
+    static GameTurn last_update_turn;
+    if (get_gameturn() != last_update_turn + 1)
+        pause_music();
+    last_update_turn = get_gameturn();
+    const Uint64 update_start = SDL_GetPerformanceCounter();
 
     struct SM64MarioInputs in = {0};
     const float yaw = thing->move_angle_xy * (2.0f * (float)M_PI / DEGREES_360);
@@ -373,7 +395,14 @@ void sm64_mario_update(struct Thing *thing)
         p_set_mario_health(mario_id, SM64_FULL_HEALTH);
         p_mario_tick(mario_id, &in, &mario_state, &mario_geometry);
     }
-    // ponytail: temporary, to find why jump/crouch don't work; remove once fixed
+    // ponytail: temporary, to check Mario is what lags and that jump/crouch arrive; remove once confirmed
+    const double update_ms = (SDL_GetPerformanceCounter() - update_start) * 1000.0 / SDL_GetPerformanceFrequency();
+    static GameTurn last_slow_log;
+    if ((update_ms > 5.0) && (get_gameturn() - last_slow_log > 100))
+    {
+        JUSTLOG("Mario update took %.1f ms", update_ms);
+        last_slow_log = get_gameturn();
+    }
     static uint8_t prev_a, prev_z;
     if ((in.buttonA != prev_a) || (in.buttonZ != prev_z))
         JUSTLOG("Mario input: jump %d crouch %d, action now 0x%08x, height %.0f", in.buttonA, in.buttonZ,

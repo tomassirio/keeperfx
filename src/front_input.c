@@ -2951,14 +2951,6 @@ static void get_creature_control_nonaction_inputs(void)
             if (is_game_key_pressed(Gkey_Descend, false, true))
                 set_packet_control(pckt, PCtr_Descend);
         }
-        // ponytail: temporary, to find why Mario's jump/crouch don't work; remove once fixed
-        static TbBool logged_keys;
-        const TbBool keys = is_game_key_pressed(Gkey_Ascend, false, true) || is_game_key_pressed(Gkey_Descend, false, true);
-        if (keys != logged_keys)
-            JUSTLOG("Mario keys: jump/crouch key %s, Mario in control %d, flags 0x%x (Ascend code %d, Descend code %d)",
-                keys ? "pressed" : "released", (int)sm64_mario_controls(thing), (unsigned)pckt->control_flags,
-                (int)settings.kbkeys[Gkey_Ascend].code, (int)settings.kbkeys[Gkey_Descend].code);
-        logged_keys = keys;
     }
     get_options_menu_inputs();
 }
