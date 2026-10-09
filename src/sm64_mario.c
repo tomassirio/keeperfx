@@ -62,7 +62,9 @@ extern "C" {
 #define SM64_TERRAIN_STONE 1
 #define SM64_FULL_HEALTH 0x880
 // ponytail: fixed chase distance; make it follow the zoom keys if people want to adjust it
-#define SM64_CHASE_DISTANCE 700
+#define SM64_CHASE_DISTANCE 900
+// Mario's forward speed (SM64 units per frame) above which the camera swings behind him; walking is ~8+
+#define SM64_FOLLOW_SPEED 8.0f
 /******************************************************************************/
 static void (*p_global_init)(const uint8_t *rom, uint8_t *outTexture);
 static void (*p_static_surfaces_load)(const struct SM64Surface *surfaceArray, uint32_t numSurfaces);
@@ -369,6 +371,17 @@ void sm64_mario_update(struct Thing *thing)
 short sm64_mario_display_angle(const struct Thing *thing)
 {
     return sm64_mario_controls(thing) ? mario_face_angle : thing->move_angle_xy;
+}
+
+void sm64_mario_follow_camera(struct Camera *cam)
+{
+    if ((mario_id < 0) || (mario_state.forwardVelocity < SM64_FOLLOW_SPEED))
+        return;
+    const int32_t diff = get_angle_signed_difference(cam->rotation_angle_x, mario_face_angle);
+    // Like SM64, don't swing round when he runs at the camera, or "back" would turn in circles
+    if (abs(diff) > DEGREES_120)
+        return;
+    cam->rotation_angle_x = (cam->rotation_angle_x + diff / 16) & ANGLE_MASK;
 }
 
 int sm64_mario_camera_distance(const struct Thing *thing, int eye_height)

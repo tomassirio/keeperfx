@@ -37,6 +37,7 @@
 #include "player_instances.h"
 
 #include <math.h>
+#include "sm64_mario.h"
 #include "post_inc.h"
 
 #ifdef __cplusplus
@@ -423,6 +424,10 @@ void update_local_cameras(void)
     int active_cam_idx = get_local_active_camera(player) - local_state.camera.current;
     if (active_cam_idx == CamIV_FirstPerson && thing_exists(ctrltng)) {
         update_local_first_person_camera(ctrltng);
+        if (sm64_mario_controls(ctrltng)) {
+            // Input builds the next look from this yaw, so the swing reaches the creature via packets
+            sm64_mario_follow_camera(&local_state.camera.destination[CamIV_FirstPerson]);
+        }
         return;
     }
     if (pckt == NULL) {
@@ -521,6 +526,12 @@ void interpolate_local_cameras(void)
         out->rotation_angle_y = lroundf(angle_y) & ANGLE_MASK;
         out->rotation_angle_z = lroundf(angle_z) & ANGLE_MASK;
         out->zoom = lroundf(zoom);
+    }
+    struct Thing *ctrltng = thing_get(get_my_player()->controlled_thing_idx);
+    if (thing_exists(ctrltng) && sm64_mario_controls(ctrltng)) {
+        // Look down at Mario; drawing only, so the mouse look and the creature's pitch are unaffected
+        struct Camera *fp = &local_state.camera.current[CamIV_FirstPerson];
+        fp->rotation_angle_y = (fp->rotation_angle_y + SM64_CHASE_TILT) & ANGLE_MASK;
     }
     interpolate_camera_deviations();
 }
