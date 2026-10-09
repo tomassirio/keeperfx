@@ -31,6 +31,8 @@
 #include "map_columns.h"
 #include "map_data.h"
 #include "bflib_planar.h"
+#include "bflib_sndlib.h"
+#include "config_settings.h"
 #include "creature_control.h"
 #include "engine_camera.h"
 #include "packets.h"
@@ -61,6 +63,10 @@ extern "C" {
 #define SM64_TICKS_PER_SECOND 30
 #define SM64_TERRAIN_STONE 1
 #define SM64_FULL_HEALTH 0x880
+// Background music while Mario is active: SEQ_LEVEL_SLIDE from libsm64's seq_ids.h,
+// started like SM64 levels do with SEQUENCE_ARGS(4, id) on SEQ_PLAYER_LEVEL (0)
+#define SM64_MUSIC_SEQ 0x09
+#define SM64_MUSIC_ARGS ((4 << 8) | SM64_MUSIC_SEQ)
 // ponytail: fixed chase distance; make it follow the zoom keys if people want to adjust it
 #define SM64_CHASE_DISTANCE 900
 // Mario's forward speed (SM64 units per frame) above which the camera swings behind him; walking is ~8+
@@ -75,6 +81,8 @@ static void (*p_set_mario_position)(int32_t marioId, float x, float y, float z);
 static void (*p_set_mario_health)(int32_t marioId, uint16_t health);
 static void (*p_audio_init)(const uint8_t *rom);
 static uint32_t (*p_audio_tick)(uint32_t numQueuedSamples, uint32_t numDesiredSamples, int16_t *audio_buffer);
+static void (*p_play_music)(uint8_t player, uint16_t seqArgs, uint16_t fadeTimer);
+static void (*p_stop_background_music)(uint16_t seqId);
 
 static TbBool sm64_ready;
 static int32_t mario_id = -1;
@@ -103,6 +111,16 @@ static void SDLCALL mario_audio_callback(void *userdata, SDL_AudioStream *stream
 {
     // ponytail: libsm64's demo also ticks audio off the game thread; its sound queue isn't locked
     int16_t buf[544 * 2 * 2];
+    // Follows the game's sound slider (voice and music share one stream); 0-127 like bflib_sound
+    SDL_SetAudioStreamGain(stream, settings.sound_volume / 127.0f);
+    if (flag_is_set(game.operation_flags, GOF_Paused))
+    {
+        // Hold the music where it is while the game is paused
+        memset(buf, 0, sizeof(buf));
+        for (; additional_amount > 0; additional_amount -= (int)sizeof(buf))
+            SDL_PutAudioStreamData(stream, buf, min(additional_amount, (int)sizeof(buf)));
+        return;
+    }
     while (additional_amount > 0)
     {
         const uint32_t queued_frames = SDL_GetAudioStreamQueued(stream) / 4;
@@ -146,8 +164,11 @@ static const char *sm64_load(void)
     *(void **)&p_set_mario_health = (void *)SDL_LoadFunction(lib, "sm64_set_mario_health");
     *(void **)&p_audio_init = (void *)SDL_LoadFunction(lib, "sm64_audio_init");
     *(void **)&p_audio_tick = (void *)SDL_LoadFunction(lib, "sm64_audio_tick");
+    *(void **)&p_play_music = (void *)SDL_LoadFunction(lib, "sm64_play_music");
+    *(void **)&p_stop_background_music = (void *)SDL_LoadFunction(lib, "sm64_stop_background_music");
     if (!p_global_init || !p_static_surfaces_load || !p_mario_create || !p_mario_tick
-     || !p_mario_delete || !p_set_mario_position || !p_set_mario_health || !p_audio_init || !p_audio_tick)
+     || !p_mario_delete || !p_set_mario_position || !p_set_mario_health || !p_audio_init || !p_audio_tick
+     || !p_play_music || !p_stop_background_music)
     {
         SDL_UnloadObject(lib);
         return SM64_LIB_FILE " is missing functions, rebuild libsm64";
@@ -282,13 +303,19 @@ const char *sm64_mario_start(struct Thing *thing)
     mario_face_angle = thing->move_angle_xy;
     mario_input = 0;
     tick_accum = 0;
+    p_play_music(0, SM64_MUSIC_ARGS, 0);
+    pause_music();
     return NULL;
 }
 
 void sm64_mario_stop(void)
 {
     if (mario_id >= 0)
+    {
         p_mario_delete(mario_id);
+        p_stop_background_music(SM64_MUSIC_SEQ);
+        resume_music();
+    }
     mario_id = -1;
     mario_thing = 0;
 }
@@ -323,6 +350,9 @@ void sm64_mario_update(struct Thing *thing)
     {
         rebuild_collision();
     }
+
+    // The game resumes its own music after its pause menu or regaining focus; keep it quiet
+    pause_music();
 
     struct SM64MarioInputs in = {0};
     const float yaw = thing->move_angle_xy * (2.0f * (float)M_PI / DEGREES_360);
