@@ -70,6 +70,7 @@
 #include "vidfade.h"
 #include "vidmode.h"
 
+#include "sm64_mario.h"
 #include "post_inc.h"
 
 #ifdef __cplusplus
@@ -4931,11 +4932,11 @@ void draw_fastview_mapwho(struct Camera *cam, struct BucketKindJontySprite *jspr
     current_frame = thing->current_frame;
     if (keepersprite_rotable(animation_sprite))
     {
-        angle = thing->move_angle_xy - cam->rotation_angle_x; // rotation_angle_x maybe short
+        angle = sm64_mario_display_angle(thing) - cam->rotation_angle_x; // rotation_angle_x maybe short
     }
     else
     {
-        angle = thing->move_angle_xy;
+        angle = sm64_mario_display_angle(thing);
     }
 
     switch(thing->rendering_flags & TRF_Transpar_Alpha)
@@ -8012,11 +8013,11 @@ void draw_jonty_mapwho(struct BucketKindJontySprite *jspr)
     current_frame = thing->current_frame;
     if (keepersprite_rotable(animation_sprite))
     {
-      angle = thing->move_angle_xy - spr_map_angle;
+      angle = sm64_mario_display_angle(thing) - spr_map_angle;
       angle += DEGREES_45 * (long)((thing->flags & TAF_ROTATED_MASK) >> TAF_ROTATED_SHIFT);
     }
     else
-      angle = thing->move_angle_xy;
+      angle = sm64_mario_display_angle(thing);
     prepare_jonty_remap_and_scale(&scaled_size, jspr);
     EngineSpriteDrawUsingAlpha = 0;
     switch (thing->rendering_flags & (TRF_Transpar_Flags))

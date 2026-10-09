@@ -37,6 +37,7 @@
 #include "keeperfx.hpp"
 #include "engine_render.h"
 #include "player_instances.h"
+#include "sm64_mario.h"
 #include "post_inc.h"
 
 #ifdef __cplusplus
@@ -427,7 +428,8 @@ void update_creature_rendering_flags(struct Thing *thing)
     thing->rendering_flags &= ~TRF_Transpar_Flags;
     thing->rendering_flags &= ~TRF_AnimateOnce;
     // Now set only those that should be
-    if ( (is_thing_directly_controlled_by_player(thing, my_player_number)) || (is_thing_passenger_controlled_by_player(thing, my_player_number)) )
+    if (((is_thing_directly_controlled_by_player(thing, my_player_number)) || (is_thing_passenger_controlled_by_player(thing, my_player_number)))
+      && !sm64_mario_controls(thing))
     {
         thing->rendering_flags |= TRF_Invisible;
     }
