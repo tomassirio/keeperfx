@@ -37,7 +37,6 @@
 #include "player_instances.h"
 #include "frontmenu_ingame_map.h"
 #include "local_camera.h"
-#include "sm64_mario.h"
 #include "post_inc.h"
 
 #ifdef __cplusplus
@@ -331,15 +330,8 @@ void update_first_person_position(struct Camera *cam, struct Thing *thing, int e
         struct CreatureControl *cctrl = creature_control_get_from_thing(thing);
         const int32_t head_bob = (cctrl->move_speed && thing_touching_floor(thing)) ? 16 * get_walking_bob_direction(thing) : 0;
 
-        int back = 90;
-        if (sm64_mario_controls(thing))
-        {
-            // Chase camera so Mario is visible
-            eye_height += SM64_CHASE_RAISE;
-            back = sm64_mario_camera_distance(thing, eye_height);
-        }
-        int pos_x = move_coord_with_angle_x(thing->mappos.x.val,-back,thing->move_angle_xy);
-        int pos_y = move_coord_with_angle_y(thing->mappos.y.val,-back,thing->move_angle_xy);
+        int pos_x = move_coord_with_angle_x(thing->mappos.x.val,-90,thing->move_angle_xy);
+        int pos_y = move_coord_with_angle_y(thing->mappos.y.val,-90,thing->move_angle_xy);
 
         view_set_camera_position(cam, pos_x, pos_y);
 

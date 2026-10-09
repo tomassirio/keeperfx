@@ -30,11 +30,8 @@
 #include "game_legacy.h"
 #include "map_columns.h"
 #include "map_data.h"
-#include "bflib_planar.h"
 #include "bflib_sndlib.h"
 #include "config_settings.h"
-#include "creature_control.h"
-#include "engine_camera.h"
 #include "packets.h"
 #include "thing_data.h"
 #include "thing_navigate.h"
@@ -67,10 +64,6 @@ extern "C" {
 // started like SM64 levels do with SEQUENCE_ARGS(4, id) on SEQ_PLAYER_LEVEL (0)
 #define SM64_MUSIC_SEQ 0x09
 #define SM64_MUSIC_ARGS ((4 << 8) | SM64_MUSIC_SEQ)
-// ponytail: fixed chase distance; make it follow the zoom keys if people want to adjust it
-#define SM64_CHASE_DISTANCE 900
-// Mario's forward speed (SM64 units per frame) above which the camera swings behind him; walking is ~8+
-#define SM64_FOLLOW_SPEED 8.0f
 /******************************************************************************/
 static void (*p_global_init)(const uint8_t *rom, uint8_t *outTexture);
 static void (*p_static_surfaces_load)(const struct SM64Surface *surfaceArray, uint32_t numSurfaces);
@@ -93,7 +86,6 @@ static struct SM64MarioState mario_state;
 static MapSubtlCoord origin_stl_x;
 static MapSubtlCoord origin_stl_y;
 static GameTurn last_rebuild_turn;
-static short mario_face_angle;
 
 static uint8_t mario_texture[4 * SM64_TEXTURE_WIDTH * SM64_TEXTURE_HEIGHT];
 static float geo_position[9 * SM64_GEO_MAX_TRIANGLES];
@@ -300,7 +292,6 @@ const char *sm64_mario_start(struct Thing *thing)
     memset(&mario_state, 0, sizeof(mario_state));
     memcpy(mario_state.position, p, sizeof(p));
     mario_thing = thing->index;
-    mario_face_angle = thing->move_angle_xy;
     mario_input = 0;
     tick_accum = 0;
     p_play_music(0, SM64_MUSIC_ARGS, 0);
@@ -390,43 +381,7 @@ void sm64_mario_update(struct Thing *thing)
     thing->velocity.x.val = 0;
     thing->velocity.y.val = 0;
     thing->velocity.z.val = 0;
-    // The walk animation is paced by distance travelled
-    struct CreatureControl *cctrl = creature_control_get_from_thing(thing);
-    cctrl->distance_to_destination = get_2d_distance(&thing->mappos, &pos);
-    // SM64 yaw 0 faces +z (south) and turns towards +x; KeeperFX 0 faces north and turns towards east
-    mario_face_angle = (DEGREES_180 - (int)(mario_state.faceAngle * (DEGREES_180 / (float)M_PI))) & ANGLE_MASK;
     move_thing_in_map(thing, &pos);
-}
-
-short sm64_mario_display_angle(const struct Thing *thing)
-{
-    return sm64_mario_controls(thing) ? mario_face_angle : thing->move_angle_xy;
-}
-
-void sm64_mario_follow_camera(struct Camera *cam)
-{
-    if ((mario_id < 0) || (mario_state.forwardVelocity < SM64_FOLLOW_SPEED))
-        return;
-    const int32_t diff = get_angle_signed_difference(cam->rotation_angle_x, mario_face_angle);
-    // Like SM64, don't swing round when he runs at the camera, or "back" would turn in circles
-    if (abs(diff) > DEGREES_120)
-        return;
-    cam->rotation_angle_x = (cam->rotation_angle_x + diff / 16) & ANGLE_MASK;
-}
-
-int sm64_mario_camera_distance(const struct Thing *thing, int eye_height)
-{
-    // Back off from the creature until the next step would put the camera inside a wall
-    const MapCoord cam_z = thing->mappos.z.val + eye_height;
-    int dist;
-    for (dist = 90; dist < SM64_CHASE_DISTANCE; dist += 32)
-    {
-        const MapCoord x = move_coord_with_angle_x(thing->mappos.x.val, -(dist + 32), thing->move_angle_xy);
-        const MapCoord y = move_coord_with_angle_y(thing->mappos.y.val, -(dist + 32), thing->move_angle_xy);
-        if (subtile_coords_invalid(coord_subtile(x), coord_subtile(y)) || (get_floor_height(coord_subtile(x), coord_subtile(y)) >= cam_z))
-            break;
-    }
-    return dist;
 }
 /******************************************************************************/
 #ifdef __cplusplus
