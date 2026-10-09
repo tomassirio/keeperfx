@@ -69,12 +69,14 @@ IMP_SPRITES = {
     "EatChicken": "STAND", "Piss": "STAND",
 }
 
-# Creature panel pictures, rendered from STAND frame ICON_FRAME (facing forward, eyes open; earlier ones blink). Sizes match the imp's originals
-# (gui1 #154 and gui2 #222): slot -> (icon name, hi-res size, low-res size, share of Mario from the top)
-ICON_FRAME = 11
+# Creature panel pictures, rendered from the STAND frame best_icon_pose() picks. Sizes match the imp's originals
+# (gui1 #154 and gui2 #222/#223): slot -> (icon name, [(hi-res size, low-res size, share of Mario from the top)])
+# The game shows "icon + 1" for small, dead and disabled versions; built-in creatures use a small head there.
+HEAD = 0.45  # share of Mario from the top that is head and shoulders
 IMP_ICONS = {
-    "QuerySymbol": ("MARIO_PORTRAIT", (48, 48), (24, 24), 0.45),  # head and shoulders
-    "HandSymbol":  ("MARIO_ICON", (30, 50), (15, 25), 1.1),       # whole body, a little room around
+    "QuerySymbol": ("MARIO_PORTRAIT", [((48, 48), (24, 24), HEAD)]),
+    "HandSymbol":  ("MARIO_ICON", [((30, 50), (15, 25), 1.1),             # whole body, a little room around
+                                   ((16, 25), (8, 13), "small head")]),  # square head at the top
 }
 
 
@@ -252,8 +254,23 @@ def hard_alpha(img):
     return img
 
 
+def best_icon_pose(frames, texture):
+    """The idle frame where Mario faces the viewer with his eyes open: most blue iris on show.
+    His idle animation looks around and blinks, and not identically from run to run."""
+    def iris_pixels(tris):
+        img = render_icon(tris, texture, (48, 48), HEAD)
+        face = img.crop((0, 0, 48, 34)).getdata()  # above the overall straps
+        return sum(1 for r, g, b, a in face if a and b > 120 and b > r + 40)
+    return max(frames, key=iris_pixels)
+
+
 def render_icon(tris, texture, size, share):
-    """Mario turned slightly towards the viewer, the top `share` of him fitted into size (w, h)."""
+    """Mario turned slightly towards the viewer, the top `share` of him fitted into size (w, h).
+    "small head" puts a square head-and-shoulders at the top of the canvas instead."""
+    if share == "small head":
+        canvas = Image.new("RGBA", size, (0, 0, 0, 0))
+        canvas.paste(render_icon(tris, texture, (size[0], size[0]), HEAD), (0, 0))
+        return canvas
     img, _ = render(tris, texture, math.radians(20), FP_PITCH, 256)
     alpha = img.getchannel("A")
     left, top, right, bottom = alpha.getbbox()
@@ -340,7 +357,7 @@ def main():
         for anim, recipe in ANIMATIONS.items():
             frames = capture(lib, recipe)
             if anim == "STAND":
-                stand_pose = frames[ICON_FRAME]
+                stand_pose = best_icon_pose(frames, texture)
             entry = {"name": "MARIO_" + anim, "rotatable": True}
             for view, pitch, px in (("td", TD_PITCH, TD_PIXELS), ("fp", FP_PITCH, FP_PIXELS)):
                 dirs = []
@@ -360,13 +377,15 @@ def main():
         zf.writestr("sprites.json", json.dumps(sprites, indent=1))
 
         icons = []
-        for name, hires, lowres, share in IMP_ICONS.values():
-            entry = {"name": name}
-            for key, size in (("file", hires), ("lowres", lowres)):
-                data = io.BytesIO()
-                render_icon(stand_pose, texture, size, share).save(data, "PNG")
-                entry[key] = f"icons/{name.lower()}_{size[0]}x{size[1]}.png"
-                zf.writestr(entry[key], data.getvalue())
+        for name, variants in IMP_ICONS.values():
+            entry = {"name": name, "file": [], "lowres": []}
+            for hires, lowres, share in variants:
+                for key, size in (("file", hires), ("lowres", lowres)):
+                    data = io.BytesIO()
+                    render_icon(stand_pose, texture, size, share).save(data, "PNG")
+                    path = f"icons/{name.lower()}_{size[0]}x{size[1]}.png"
+                    zf.writestr(path, data.getvalue())
+                    entry[key].append(path)
             icons.append(entry)
         zf.writestr("icons.json", json.dumps(icons, indent=1))
         print(f"rendered {len(icons)} icons")
