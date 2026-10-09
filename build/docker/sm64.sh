@@ -30,8 +30,12 @@ git -C out/libsm64 checkout -q "$LIBSM64_COMMIT"
 docker run --rm -v "$PWD":/src kfx-mingw sh -ec '
 D=out/docker-mingw/deps
 cd out/libsm64
-# Windows DLL for the game; static libgcc so it only needs KERNEL32 and msvcrt
-make lib OS=Windows_NT CC=i686-w64-mingw32-gcc LDFLAGS="-shared -static-libgcc -lm" -j8
+# Windows DLL for the game; static libgcc so it only needs KERNEL32 and msvcrt.
+# SSE2 math and -O2 (the libsm64 Makefile has neither): 32-bit x86 otherwise uses x87, which
+# Rosetta emulates very slowly on Apple Silicon - Mario physics took ~30 ms a turn.
+# Clean first so no x87 objects from an older build get linked in.
+make clean >/dev/null
+make lib OS=Windows_NT CC="i686-w64-mingw32-gcc -O2 -msse2 -mfpmath=sse" LDFLAGS="-shared -static-libgcc -lm" -j8
 # Native copy for the check below, built separately so the two never mix
 rm -rf /tmp/native && cp -r . /tmp/native && make -C /tmp/native clean >/dev/null && make -C /tmp/native lib -j8 >/dev/null
 cd /src
