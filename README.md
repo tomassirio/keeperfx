@@ -9,6 +9,12 @@
 
 [Visit our website](https://keeperfx.net) | [Join our Discord (Keeper Klan)](https://discord.gg/hE4p7vy2Hb)
 
+> **This is a fork: Mario imps.** Possess an imp and play as Mario from Super Mario 64,
+> with his physics, voice and music; every imp looks and sounds like him. Built on
+> [libsm64](https://github.com/libsm64/libsm64), using your own Super Mario 64 ROM —
+> no Nintendo assets are included. See **[docs/sm64-mario.md](docs/sm64-mario.md)**.
+> Not affiliated with Nintendo or the KeeperFX team; the rest of this README is upstream's.
+
 
 ## Intro
 KeeperFX (Dungeon Keeper Fan eXpansion) is an open-source project that aims to fix up, enhance and modernize 
