@@ -73,10 +73,11 @@ IMP_SPRITES = {
 # (gui1 #154 and gui2 #222/#223): slot -> (icon name, [(hi-res size, low-res size, share of Mario from the top)])
 # The game shows "icon + 1" for small, dead and disabled versions; built-in creatures use a small head there.
 HEAD = 0.45  # share of Mario from the top that is head and shoulders
+FACE = 0.42  # ... that is just his head, cap to chin
 IMP_ICONS = {
     "QuerySymbol": ("MARIO_PORTRAIT", [((48, 48), (24, 24), HEAD)]),
-    "HandSymbol":  ("MARIO_ICON", [((30, 50), (15, 25), 1.1),             # whole body, a little room around
-                                   ((16, 25), (8, 13), "small head")]),  # square head at the top
+    "HandSymbol":  ("MARIO_ICON", [((30, 50), (15, 25), "face"),          # next to the hand: just his face
+                                   ((16, 25), (8, 13), "small face")]),  # square face at the top
 }
 
 
@@ -266,23 +267,28 @@ def hard_alpha(img):
 
 
 def best_icon_pose(frames, texture):
-    """The idle frame where Mario faces the viewer with his eyes open: most blue iris on show.
-    His idle animation looks around and blinks, and not identically from run to run."""
-    def iris_pixels(tris):
-        img = render_icon(tris, texture, (48, 48), HEAD)
-        face = img.crop((0, 0, 48, 34)).getdata()  # above the overall straps
-        return sum(1 for r, g, b, a in face if a and b > 120 and b > r + 40)
-    return max(frames, key=iris_pixels)
+    """The idle frame where Mario looks straight ahead with his eyes open. Rendered head-on, his
+    less visible eye scores, so a blink or a turned head (one eye hidden) loses. His idle animation
+    looks around and blinks, and not identically from run to run."""
+    def is_iris(px):
+        r, g, b, a = px
+        return a and b > 120 and b > r + 40
+    def weaker_eye(tris):
+        img = render_icon(tris, texture, (48, 48), FACE, yaw_deg=0)
+        halves = (img.crop((0, 0, 24, 48)), img.crop((24, 0, 48, 48)))
+        return min(sum(map(is_iris, half.getdata())) for half in halves)
+    return max(frames, key=weaker_eye)
 
 
-def render_icon(tris, texture, size, share):
+def render_icon(tris, texture, size, share, yaw_deg=20):
     """Mario turned slightly towards the viewer, the top `share` of him fitted into size (w, h).
-    "small head" puts a square head-and-shoulders at the top of the canvas instead."""
-    if share == "small head":
+    "face" / "small face": his face straight on, as a square centred / at the top of the canvas."""
+    if share in ("face", "small face"):
         canvas = Image.new("RGBA", size, (0, 0, 0, 0))
-        canvas.paste(render_icon(tris, texture, (size[0], size[0]), HEAD), (0, 0))
+        y = 0 if share == "small face" else (size[1] - size[0]) // 2
+        canvas.paste(render_icon(tris, texture, (size[0], size[0]), FACE, yaw_deg=0), (0, y))
         return canvas
-    img, _ = render(tris, texture, math.radians(20), FP_PITCH, 256)
+    img, _ = render(tris, texture, math.radians(yaw_deg), FP_PITCH, 256)
     alpha = img.getchannel("A")
     left, top, right, bottom = alpha.getbbox()
     crop_h = (bottom - top) * share
