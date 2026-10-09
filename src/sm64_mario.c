@@ -61,6 +61,7 @@ extern "C" {
 #define SM64_TICKS_PER_SECOND 30
 #define SM64_TERRAIN_STONE 1
 #define SM64_FULL_HEALTH 0x880
+#define SM64_AUDIO_QUEUE_BYTES (32000 * 4 * 15 / 100)
 // Background music while Mario is active: SEQ_LEVEL_SLIDE from libsm64's seq_ids.h,
 // started like SM64 levels do with SEQUENCE_ARGS(4, id) on SEQ_PLAYER_LEVEL (0)
 #define SM64_MUSIC_SEQ 0x09
@@ -99,45 +100,41 @@ static struct SM64MarioGeometryBuffers mario_geometry = { geo_position, geo_norm
 static struct SM64Surface surfaces[SM64_WINDOW_CELLS * 12];
 static uint32_t surface_count;
 /******************************************************************************/
-/** SDL pulls Mario's voice and footsteps straight out of libsm64's own sound engine. */
-static void SDLCALL mario_audio_callback(void *userdata, SDL_AudioStream *stream, int additional_amount, int total_amount)
-{
-    // ponytail: libsm64's demo also ticks audio off the game thread; its sound queue isn't locked
-    int16_t buf[544 * 2 * 2];
-    // Follows the game's sound slider (voice and music share one stream); 0-127 like bflib_sound
-    SDL_SetAudioStreamGain(stream, settings.sound_volume / 127.0f);
-    if (flag_is_set(game.operation_flags, GOF_Paused))
-    {
-        // Hold the music where it is while the game is paused
-        memset(buf, 0, sizeof(buf));
-        for (; additional_amount > 0; additional_amount -= (int)sizeof(buf))
-            SDL_PutAudioStreamData(stream, buf, min(additional_amount, (int)sizeof(buf)));
-        return;
-    }
-    while (additional_amount > 0)
-    {
-        const uint32_t queued_frames = SDL_GetAudioStreamQueued(stream) / 4;
-        // Each tick yields two blocks of stereo 16-bit frames
-        const int frames = 2 * p_audio_tick(queued_frames, 1100, buf);
-        if (frames <= 0)
-            break;
-        SDL_PutAudioStreamData(stream, buf, frames * 4);
-        additional_amount -= frames * 4;
-    }
-}
+static SDL_AudioStream *mario_audio;
 
 static void start_mario_audio(const uint8_t *rom)
 {
     p_audio_init(rom);
     const SDL_AudioSpec spec = { SDL_AUDIO_S16, 2, 32000 };
-    // ponytail: own stream at fixed volume; route through the game's sound volume if it's too loud
-    SDL_AudioStream *stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, mario_audio_callback, NULL);
-    if (stream == NULL)
+    mario_audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
+    if (mario_audio == NULL)
     {
         WARNLOG("Mario will be silent: %s", SDL_GetError());
         return;
     }
-    SDL_ResumeAudioStreamDevice(stream);
+    SDL_ResumeAudioStreamDevice(mario_audio);
+}
+
+/** Runs libsm64's sound engine on the game thread, topping the stream up each turn.
+ * An SDL callback thread ran it alongside Mario's physics, unsynchronised, and stalled turns.
+ * No turns while paused, so the music holds; stopping Mario lets the queue run dry. */
+static void feed_mario_audio(void)
+{
+    if (mario_audio == NULL)
+        return;
+    // Follows the game's sound slider (voice and music share one stream); 0-127 like bflib_sound
+    SDL_SetAudioStreamGain(mario_audio, settings.sound_volume / 127.0f);
+    int16_t buf[544 * 2 * 2];
+    // Keep ~0.15 s queued: turns come every ~50 ms and each tick yields ~34 ms
+    while (SDL_GetAudioStreamQueued(mario_audio) < SM64_AUDIO_QUEUE_BYTES)
+    {
+        const uint32_t queued_frames = SDL_GetAudioStreamQueued(mario_audio) / 4;
+        // Each tick yields two blocks of stereo 16-bit frames
+        const int frames = 2 * p_audio_tick(queued_frames, 1100, buf);
+        if (frames <= 0)
+            break;
+        SDL_PutAudioStreamData(mario_audio, buf, frames * 4);
+    }
 }
 
 static const char *sm64_load(void)
@@ -339,8 +336,22 @@ void sm64_mario_set_input(uint32_t control_flags)
     mario_input = control_flags;
 }
 
+// ponytail: temporary timing, to confirm Mario no longer stalls turns; remove once confirmed
+static double timing_max_ms[3];
+static int timing_slow_turns;
+static Uint64 timing_mark;
+static void timing_lap(int part)
+{
+    const Uint64 now = SDL_GetPerformanceCounter();
+    const double ms = (now - timing_mark) * 1000.0 / SDL_GetPerformanceFrequency();
+    timing_max_ms[part] = max(timing_max_ms[part], ms);
+    timing_mark = now;
+}
+
 void sm64_mario_update(struct Thing *thing)
 {
+    const Uint64 update_start = SDL_GetPerformanceCounter();
+    timing_mark = update_start;
     const MapSubtlCoord stl_x = thing->mappos.x.stl.num;
     const MapSubtlCoord stl_y = thing->mappos.y.stl.num;
     if ((abs(stl_x - origin_stl_x) > SM64_WINDOW_STL / 2) || (abs(stl_y - origin_stl_y) > SM64_WINDOW_STL / 2))
@@ -365,7 +376,7 @@ void sm64_mario_update(struct Thing *thing)
     if (get_gameturn() != last_update_turn + 1)
         pause_music();
     last_update_turn = get_gameturn();
-    const Uint64 update_start = SDL_GetPerformanceCounter();
+    timing_lap(0);
 
     struct SM64MarioInputs in = {0};
     const float yaw = thing->move_angle_xy * (2.0f * (float)M_PI / DEGREES_360);
@@ -395,20 +406,18 @@ void sm64_mario_update(struct Thing *thing)
         p_set_mario_health(mario_id, SM64_FULL_HEALTH);
         p_mario_tick(mario_id, &in, &mario_state, &mario_geometry);
     }
-    // ponytail: temporary, to check Mario is what lags and that jump/crouch arrive; remove once confirmed
-    const double update_ms = (SDL_GetPerformanceCounter() - update_start) * 1000.0 / SDL_GetPerformanceFrequency();
-    static GameTurn last_slow_log;
-    if ((update_ms > 5.0) && (get_gameturn() - last_slow_log > 100))
+    timing_lap(1);
+    feed_mario_audio();
+    timing_lap(2);
+    if ((SDL_GetPerformanceCounter() - update_start) * 1000.0 / SDL_GetPerformanceFrequency() > 5.0)
+        timing_slow_turns++;
+    if (get_gameturn() % 100 == 0)
     {
-        JUSTLOG("Mario update took %.1f ms", update_ms);
-        last_slow_log = get_gameturn();
+        JUSTLOG("Mario timing, last 100 turns: %d over 5 ms; max collision+music pause %.1f ms, physics %.1f ms, audio %.1f ms",
+            timing_slow_turns, timing_max_ms[0], timing_max_ms[1], timing_max_ms[2]);
+        memset(timing_max_ms, 0, sizeof(timing_max_ms));
+        timing_slow_turns = 0;
     }
-    static uint8_t prev_a, prev_z;
-    if ((in.buttonA != prev_a) || (in.buttonZ != prev_z))
-        JUSTLOG("Mario input: jump %d crouch %d, action now 0x%08x, height %.0f", in.buttonA, in.buttonZ,
-            (unsigned)mario_state.action, mario_state.position[1]);
-    prev_a = in.buttonA;
-    prev_z = in.buttonZ;
 
     struct Coord3d pos;
     pos.x.val = clamp(subtile_coord(origin_stl_x, 0) + lroundf(mario_state.position[0] * SM64_SCALE), 0, subtile_coord(game.map_subtiles_x, 0) - 1);
