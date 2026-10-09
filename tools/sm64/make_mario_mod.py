@@ -71,13 +71,14 @@ IMP_SPRITES = {
 
 # Creature panel pictures, rendered from the STAND frame best_icon_pose() picks. Sizes match the imp's originals
 # (gui1 #154 and gui2 #222/#223): slot -> (icon name, [(hi-res size, low-res size, share of Mario from the top)])
-# The game shows "icon + 1" for small, dead and disabled versions; built-in creatures use a small head there.
+# Hand icons copy the imp's layout: a small head with a drop shadow low in the 30x50 canvas, top left
+# empty for the level badge drawn over it; "icon + 1" is the same head greyed out (dead/disabled).
 HEAD = 0.45  # share of Mario from the top that is head and shoulders
 FACE = 0.42  # ... that is just his head, cap to chin
 IMP_ICONS = {
     "QuerySymbol": ("MARIO_PORTRAIT", [((48, 48), (24, 24), HEAD)]),
-    "HandSymbol":  ("MARIO_ICON", [((30, 50), (15, 25), "face"),          # next to the hand: just his face
-                                   ((16, 25), (8, 13), "small face")]),  # square face at the top
+    "HandSymbol":  ("MARIO_ICON", [((30, 50), (15, 25), "hand"),
+                                   ((30, 50), (15, 25), "hand grey")]),
 }
 
 
@@ -282,11 +283,18 @@ def best_icon_pose(frames, texture):
 
 def render_icon(tris, texture, size, share, yaw_deg=20):
     """Mario turned slightly towards the viewer, the top `share` of him fitted into size (w, h).
-    "face" / "small face": his face straight on, as a square centred / at the top of the canvas."""
-    if share in ("face", "small face"):
+    "hand" / "hand grey": his face straight on, small and shadowed where the imp's hand icon has its head."""
+    if share in ("hand", "hand grey"):
+        # Where the imp's head sits in its 30x50 hand icon (gui2 #222), scaled for low-res
+        s = size[0] / 30
+        side, left, top, drop = round(17 * s), round(6 * s), round(23 * s), max(1, round(2 * s))
+        face = render_icon(tris, texture, (side, side), FACE, yaw_deg=0)
+        if share == "hand grey":
+            face = Image.merge("RGBA", (*[face.convert("L")] * 3, face.getchannel("A")))
+        shadow = Image.new("RGBA", face.size, (16, 12, 8, 255))
         canvas = Image.new("RGBA", size, (0, 0, 0, 0))
-        y = 0 if share == "small face" else (size[1] - size[0]) // 2
-        canvas.paste(render_icon(tris, texture, (size[0], size[0]), FACE, yaw_deg=0), (0, y))
+        canvas.paste(shadow, (left + drop, top + drop), face.getchannel("A"))
+        canvas.paste(face, (left, top), face.getchannel("A"))
         return canvas
     img, _ = render(tris, texture, math.radians(yaw_deg), FP_PITCH, 256)
     alpha = img.getchannel("A")
@@ -396,11 +404,11 @@ def main():
         icons = []
         for name, variants in IMP_ICONS.values():
             entry = {"name": name, "file": [], "lowres": []}
-            for hires, lowres, share in variants:
+            for k, (hires, lowres, share) in enumerate(variants):
                 for key, size in (("file", hires), ("lowres", lowres)):
                     data = io.BytesIO()
                     render_icon(stand_pose, texture, size, share).save(data, "PNG")
-                    path = f"icons/{name.lower()}_{size[0]}x{size[1]}.png"
+                    path = f"icons/{name.lower()}{k}_{size[0]}x{size[1]}.png"
                     zf.writestr(path, data.getvalue())
                     entry[key].append(path)
             icons.append(entry)
