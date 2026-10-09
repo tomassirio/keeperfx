@@ -69,6 +69,14 @@ IMP_SPRITES = {
     "EatChicken": "STAND", "Piss": "STAND",
 }
 
+# Creature panel pictures, rendered from STAND frame ICON_FRAME (facing forward, eyes open; earlier ones blink). Sizes match the imp's originals
+# (gui1 #154 and gui2 #222): slot -> (icon name, hi-res size, low-res size, share of Mario from the top)
+ICON_FRAME = 11
+IMP_ICONS = {
+    "QuerySymbol": ("MARIO_PORTRAIT", (48, 48), (24, 24), 0.45),  # head and shoulders
+    "HandSymbol":  ("MARIO_ICON", (30, 50), (15, 25), 1.1),       # whole body, a little room around
+}
+
 
 def sound_arg_load(bank, play_flags, sound_id, priority, flags2):
     # SOUND_ARG_LOAD from libsm64 src/decomp/include/audio_defines.h; low bit is SOUND_STATUS_STARTING
@@ -191,31 +199,72 @@ def render(tris, texture, yaw, pitch_deg, height_px):
     draw = ImageDraw.Draw(img)
     projected = []
     for tri in tris:
-        pts, depth, rgb = [], 0.0, [0.0, 0.0, 0.0]
+        pts, depth, rgb, tri_shade = [], 0.0, [0.0, 0.0, 0.0], 0.0
         for p, n, col, uv in tri:
             x, y, z = rotate_y(p, yaw)
             pts.append((w / 2 + x * scale, feet_row - (y * cp - z * sp) * scale))
             depth += z * cp + y * sp
             nx, ny, nz = rotate_y(n, yaw)
             shade = 0.45 + 0.55 * max(0.0, nx * light[0] + ny * light[1] + nz * light[2])
+            tri_shade += shade / 3
             for k in range(3):
                 rgb[k] += col[k] * shade / 3
-        # libsm64 marks untextured triangles with uv >= 1; textured ones blend the atlas by its alpha.
-        # ponytail: one texture sample per triangle; per-pixel UVs if faces/buttons look too blurry
-        u = sum(v[3][0] for v in tri) / 3
-        v = sum(v[3][1] for v in tri) / 3
-        if u < 1 and v < 1:
-            tr, tg, tb, ta = texture.getpixel((int(max(u, 0) * TEX_W), int(max(v, 0) * TEX_H)))
-            a = ta / 255
-            rgb = [rgb[k] * (1 - a) + (c / 255) * a for k, c in enumerate((tr, tg, tb))]
-        projected.append((depth, pts, tuple(min(255, int(c * 255)) for c in rgb)))
-    for _, pts, colour in sorted(projected, key=lambda t: t[0]):  # far first
-        draw.polygon(pts, fill=colour + (255,))
-    img = img.resize((size, size), Image.BOX)
-    # Palette sprites have no partial transparency
-    alpha = img.getchannel("A").point(lambda a: 255 if a >= 128 else 0)
-    img.putalpha(alpha)
+        # libsm64 marks untextured triangles with uv >= 1
+        uvs = [v[3] for v in tri]
+        textured = sum(u for u, _ in uvs) / 3 < 1 and sum(v for _, v in uvs) / 3 < 1
+        colour = tuple(min(255, int(c * 255)) for c in rgb)
+        projected.append((depth, pts, colour, uvs if textured else None, tri_shade))
+    for _, pts, colour, uvs, shade in sorted(projected, key=lambda t: t[0]):  # far first
+        if uvs is None or not draw_textured(img, pts, uvs, texture, colour, shade):
+            draw.polygon(pts, fill=colour + (255,))
+    img = hard_alpha(img.resize((size, size), Image.BOX))
     return img, size - margin
+
+
+def draw_textured(img, pts, uvs, texture, colour, shade):
+    """Draws a triangle with the atlas blended over its vertex colour by the atlas alpha.
+    The projection is orthographic, so an affine warp of the atlas is exact. False if degenerate."""
+    left, top = int(min(x for x, _ in pts)), int(min(y for _, y in pts))
+    right, bottom = int(max(x for x, _ in pts)) + 2, int(max(y for _, y in pts)) + 2
+    (x0, y0), (x1, y1), (x2, y2) = [(x - left, y - top) for x, y in pts]
+    det = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
+    if abs(det) < 1e-6:
+        return False
+    # Affine map from patch pixel (X, Y) to atlas pixel, solved from the three corners
+    coeffs = []
+    for t0, t1, t2 in ([u * TEX_W for u, _ in uvs], [v * TEX_H for _, v in uvs]):
+        a = ((t1 - t0) * (y2 - y0) - (t2 - t0) * (y1 - y0)) / det
+        b = ((t2 - t0) * (x1 - x0) - (t1 - t0) * (x2 - x0)) / det
+        coeffs += [a, b, t0 - a * x0 - b * y0]
+    size = (right - left, bottom - top)
+    tex = texture.transform(size, Image.AFFINE, coeffs, resample=Image.BILINEAR)
+    lit = tex.convert("RGB").point(lambda c: min(255, int(c * shade)))
+    patch = Image.composite(lit, Image.new("RGB", size, colour), tex.getchannel("A"))
+    mask = Image.new("L", size, 0)
+    ImageDraw.Draw(mask).polygon([(x0, y0), (x1, y1), (x2, y2)], fill=255)
+    img.paste(patch, (left, top), mask)
+    return True
+
+
+def hard_alpha(img):
+    """Palette sprites have no partial transparency."""
+    img.putalpha(img.getchannel("A").point(lambda a: 255 if a >= 128 else 0))
+    return img
+
+
+def render_icon(tris, texture, size, share):
+    """Mario turned slightly towards the viewer, the top `share` of him fitted into size (w, h)."""
+    img, _ = render(tris, texture, math.radians(20), FP_PITCH, 256)
+    alpha = img.getchannel("A")
+    left, top, right, bottom = alpha.getbbox()
+    crop_h = (bottom - top) * share
+    crop_w = crop_h * size[0] / size[1]
+    # Centre on what's inside the crop (the head is off-centre when he's turned)
+    rows = alpha.crop((0, top, img.width, round(top + min(crop_h, bottom - top)))).getbbox()
+    cx = (rows[0] + rows[2]) / 2
+    top -= (bottom - top) * max(share - 1, 0) / 2  # spread any spare room above and below
+    img = img.crop((round(cx - crop_w / 2), round(top), round(cx + crop_w / 2), round(top + crop_h)))
+    return hard_alpha(img.resize(size, Image.LANCZOS))
 
 
 def capture(lib, recipe):
@@ -290,6 +339,8 @@ def main():
     with zipfile.ZipFile(os.path.join(mod, "fxdata", MOD_NAME + ".zip"), "w", zipfile.ZIP_DEFLATED) as zf:
         for anim, recipe in ANIMATIONS.items():
             frames = capture(lib, recipe)
+            if anim == "STAND":
+                stand_pose = frames[ICON_FRAME]
             entry = {"name": "MARIO_" + anim, "rotatable": True}
             for view, pitch, px in (("td", TD_PITCH, TD_PIXELS), ("fp", FP_PITCH, FP_PIXELS)):
                 dirs = []
@@ -308,8 +359,21 @@ def main():
             print(f"rendered {entry['name']}: {len(frames)} frames x 5 directions")
         zf.writestr("sprites.json", json.dumps(sprites, indent=1))
 
+        icons = []
+        for name, hires, lowres, share in IMP_ICONS.values():
+            entry = {"name": name}
+            for key, size in (("file", hires), ("lowres", lowres)):
+                data = io.BytesIO()
+                render_icon(stand_pose, texture, size, share).save(data, "PNG")
+                entry[key] = f"icons/{name.lower()}_{size[0]}x{size[1]}.png"
+                zf.writestr(entry[key], data.getvalue())
+            icons.append(entry)
+        zf.writestr("icons.json", json.dumps(icons, indent=1))
+        print(f"rendered {len(icons)} icons")
+
     cfg = ["; Generated by tools/sm64/make_mario_mod.py from your own ROM", "[sprites]"]
     cfg += [f"{slot} = MARIO_{anim}" for slot, anim in IMP_SPRITES.items()]
+    cfg += [f"{slot} = {icon[0]}" for slot, icon in IMP_ICONS.items()]
     cfg += ["", "[sounds]"]
     for slot, voices in IMP_SOUNDS.items():
         for i, bits in enumerate(voices, 1):
