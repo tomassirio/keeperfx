@@ -2,14 +2,23 @@
 # Builds sm64.dll (libsm64, for the "mario" console command) and runs the
 # collision check, inside the kfx-mingw image (see mingw.Dockerfile).
 # Given your own ROM, also generates the Mario imp mod from it.
-# Run from the repo root after building keeperfx once (SDL3 headers come from out/docker-mingw/deps).
+# Run from anywhere after building keeperfx once (SDL3 headers come from out/docker-mingw/deps).
 #   build/docker/sm64.sh [path/to/sm64.us.z64]
 # Output: out/libsm64/dist/sm64.dll - copy it next to keeperfx.exe, together
 # with the ROM; out/mods/mario_imp - copy into the game's mods/ folder.
 set -e
-rm -f out/sm64.us.z64
+ROM=""
 if [ -n "$1" ]; then
-    cp "$1" out/sm64.us.z64  # out/ is git-ignored; the container only sees the repo
+    ROM="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"  # absolute, before leaving the caller's directory
+fi
+cd "$(dirname "$0")/../.."
+if [ ! -d out/docker-mingw/deps ]; then
+    echo "Build keeperfx first (see build/docker/mingw.Dockerfile)" >&2
+    exit 1
+fi
+rm -f out/sm64.us.z64
+if [ -n "$ROM" ]; then
+    cp "$ROM" out/sm64.us.z64  # out/ is git-ignored; the container only sees the repo
 fi
 LIBSM64_COMMIT=fd11813208272b4271d92bd92feb8f3fdbe61be5
 
