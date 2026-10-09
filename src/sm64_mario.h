@@ -28,7 +28,8 @@ void sm64_mario_stop(void);
 TbBool sm64_mario_controls(const struct Thing *thing);
 void sm64_mario_set_input(uint32_t control_flags);
 void sm64_mario_update(struct Thing *thing);
-/** Called when a creature gets possessed: the keeper's worker (the imp) becomes Mario if libsm64 is set up. */
+/** Called when a creature gets possessed: with MARIO_IMPS=ON in keeperfx.cfg and libsm64 set up,
+ * the keeper's worker (the imp) becomes Mario. */
 void sm64_mario_auto_start(struct Thing *thing);
 /******************************************************************************/
 #ifdef __cplusplus

@@ -32,6 +32,7 @@
 #include "map_data.h"
 #include "bflib_sndlib.h"
 #include "config_creature.h"
+#include "config_keeperfx.h"
 #include "config_settings.h"
 #include "packets.h"
 #include "thing_data.h"
@@ -319,7 +320,7 @@ void sm64_mario_auto_start(struct Thing *thing)
 {
     // Single player only: libsm64's physics is float based and would desync network games
     static TbBool unavailable;
-    if (unavailable || (game.game_kind != GKind_LocalGame)
+    if (unavailable || !flag_is_set(features_enabled, Ft_MarioImps) || (game.game_kind != GKind_LocalGame)
      || (thing->model != get_players_special_digger_model(thing->owner)))
         return;
     const char *err = sm64_mario_start(thing);
@@ -336,22 +337,8 @@ void sm64_mario_set_input(uint32_t control_flags)
     mario_input = control_flags;
 }
 
-// ponytail: temporary timing, to confirm Mario no longer stalls turns; remove once confirmed
-static double timing_max_ms[3];
-static int timing_slow_turns;
-static Uint64 timing_mark;
-static void timing_lap(int part)
-{
-    const Uint64 now = SDL_GetPerformanceCounter();
-    const double ms = (now - timing_mark) * 1000.0 / SDL_GetPerformanceFrequency();
-    timing_max_ms[part] = max(timing_max_ms[part], ms);
-    timing_mark = now;
-}
-
 void sm64_mario_update(struct Thing *thing)
 {
-    const Uint64 update_start = SDL_GetPerformanceCounter();
-    timing_mark = update_start;
     const MapSubtlCoord stl_x = thing->mappos.x.stl.num;
     const MapSubtlCoord stl_y = thing->mappos.y.stl.num;
     if ((abs(stl_x - origin_stl_x) > SM64_WINDOW_STL / 2) || (abs(stl_y - origin_stl_y) > SM64_WINDOW_STL / 2))
@@ -376,7 +363,6 @@ void sm64_mario_update(struct Thing *thing)
     if (get_gameturn() != last_update_turn + 1)
         pause_music();
     last_update_turn = get_gameturn();
-    timing_lap(0);
 
     struct SM64MarioInputs in = {0};
     const float yaw = thing->move_angle_xy * (2.0f * (float)M_PI / DEGREES_360);
@@ -406,18 +392,7 @@ void sm64_mario_update(struct Thing *thing)
         p_set_mario_health(mario_id, SM64_FULL_HEALTH);
         p_mario_tick(mario_id, &in, &mario_state, &mario_geometry);
     }
-    timing_lap(1);
     feed_mario_audio();
-    timing_lap(2);
-    if ((SDL_GetPerformanceCounter() - update_start) * 1000.0 / SDL_GetPerformanceFrequency() > 5.0)
-        timing_slow_turns++;
-    if (get_gameturn() % 100 == 0)
-    {
-        JUSTLOG("Mario timing, last 100 turns: %d over 5 ms; max collision+music pause %.1f ms, physics %.1f ms, audio %.1f ms",
-            timing_slow_turns, timing_max_ms[0], timing_max_ms[1], timing_max_ms[2]);
-        memset(timing_max_ms, 0, sizeof(timing_max_ms));
-        timing_slow_turns = 0;
-    }
 
     struct Coord3d pos;
     pos.x.val = clamp(subtile_coord(origin_stl_x, 0) + lroundf(mario_state.position[0] * SM64_SCALE), 0, subtile_coord(game.map_subtiles_x, 0) - 1);

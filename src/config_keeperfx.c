@@ -180,6 +180,7 @@ const struct NamedCommand conf_commands[] = {
   {"AUTOMATIC_REPLAYS"             , 52},
   {"MAX_REPLAYS"                   , 53},
   {"REPLAY_MAX_SIZE"               , 54},
+  {"MARIO_IMPS"                    , 55},
   {NULL,                   0},
   };
 
@@ -1147,6 +1148,19 @@ static void load_file_configuration(const char *fname, const char *sname, const 
           else {
               CONFWRNLOG("Invalid \"%s\" value in %s file.", COMMAND_TEXT(cmd_num), config_textname);
           }
+          break;
+      case 55: // MARIO_IMPS
+          i = recognize_conf_parameter(buf,&pos,len,logicval_type);
+          if (i <= 0)
+          {
+              CONFWRNLOG("Couldn't recognize \"%s\" command parameter in %s file.",
+                COMMAND_TEXT(cmd_num),config_textname);
+            break;
+          }
+          if (i == 1)
+              features_enabled |= Ft_MarioImps;
+          else
+              features_enabled &= ~Ft_MarioImps;
           break;
       case ccr_comment:
           break;

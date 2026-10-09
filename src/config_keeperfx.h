@@ -53,6 +53,7 @@ enum TbFeature {
     Ft_DeltaTime                    = 0x40000,
     Ft_NoCdMusic                    = 0x80000,
     Ft_RelativeMouseMode            = 0x100000,
+    Ft_MarioImps                    = 0x200000, // possessed imps become Mario (needs sm64.dll and a ROM)
 };
 
 #define PARCHMENT_MAP_FADE_ORIGINAL_TURNS 8
