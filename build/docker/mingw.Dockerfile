@@ -13,6 +13,6 @@
 # res/keeperfx_icon.ico once beforehand (any .ico works, e.g. via Pillow).
 FROM ubuntu:24.04
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    g++-mingw-w64-i686 cmake ninja-build make ca-certificates git python3 gcc libc6-dev \
+    g++-mingw-w64-i686 cmake ninja-build make ca-certificates git python3 python3-pil gcc libc6-dev \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
