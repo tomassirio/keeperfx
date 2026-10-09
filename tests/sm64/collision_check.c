@@ -2,16 +2,10 @@
 // and asks libsm64 what it sees. Needs no ROM. Run: build/docker/sm64.sh
 #include "sm64_mario.c"
 #include <assert.h>
-#include <stdarg.h>
 
+// Only what rebuild_collision() calls; the rest is left unresolved at link time (see sm64.sh)
 struct Game game;
-SDL_SharedObject *SDL_LoadObject(const char *f) { (void)f; return 0; }
-SDL_FunctionPointer SDL_LoadFunction(SDL_SharedObject *l, const char *n) { (void)l; (void)n; return 0; }
-void SDL_UnloadObject(SDL_SharedObject *l) { (void)l; }
-int32_t turns_per_second = 20;
 GameTurn get_gameturn(void) { return 0; }
-int LbJustLog(const char *fmt, ...) { (void)fmt; return 0; }
-void move_thing_in_map_f(struct Thing *t, const struct Coord3d *p, const char *f) { (void)t; (void)p; (void)f; }
 TbBool subtile_coords_invalid(MapSubtlCoord x, MapSubtlCoord y) { return x < 0 || y < 0 || x > game.map_subtiles_x || y > game.map_subtiles_y; }
 
 // Floor 256 everywhere, a wall (1280) at subtile x=12, a pit (0) at x=8

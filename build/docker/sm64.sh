@@ -26,6 +26,7 @@ gcc -std=gnu11 -w -Isrc -I/tmp/native/src \
     -I$D/sdl3_mixer/SDL3_mixer-3.2.4/i686-w64-mingw32/include \
     -I$D/sdl3_image/SDL3_image-3.4.4/i686-w64-mingw32/include \
     -I$D/openal/include -I$D/luajit/include -Ideps/centitoml \
-    tests/sm64/collision_check.c -o /tmp/collision_check /tmp/native/dist/libsm64.so -lm
+    tests/sm64/collision_check.c -o /tmp/collision_check /tmp/native/dist/libsm64.so -lm \
+    -Wl,--unresolved-symbols=ignore-all  # game functions the check never calls
 LD_LIBRARY_PATH=/tmp/native/dist /tmp/collision_check
 '

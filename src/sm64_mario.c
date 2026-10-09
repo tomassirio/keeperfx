@@ -71,6 +71,8 @@ static void (*p_mario_tick)(int32_t marioId, const struct SM64MarioInputs *input
 static void (*p_mario_delete)(int32_t marioId);
 static void (*p_set_mario_position)(int32_t marioId, float x, float y, float z);
 static void (*p_set_mario_health)(int32_t marioId, uint16_t health);
+static void (*p_audio_init)(const uint8_t *rom);
+static uint32_t (*p_audio_tick)(uint32_t numQueuedSamples, uint32_t numDesiredSamples, int16_t *audio_buffer);
 
 static TbBool sm64_ready;
 static int32_t mario_id = -1;
@@ -94,6 +96,37 @@ static struct SM64MarioGeometryBuffers mario_geometry = { geo_position, geo_norm
 static struct SM64Surface surfaces[SM64_WINDOW_CELLS * 12];
 static uint32_t surface_count;
 /******************************************************************************/
+/** SDL pulls Mario's voice and footsteps straight out of libsm64's own sound engine. */
+static void SDLCALL mario_audio_callback(void *userdata, SDL_AudioStream *stream, int additional_amount, int total_amount)
+{
+    // ponytail: libsm64's demo also ticks audio off the game thread; its sound queue isn't locked
+    int16_t buf[544 * 2 * 2];
+    while (additional_amount > 0)
+    {
+        const uint32_t queued_frames = SDL_GetAudioStreamQueued(stream) / 4;
+        // Each tick yields two blocks of stereo 16-bit frames
+        const int frames = 2 * p_audio_tick(queued_frames, 1100, buf);
+        if (frames <= 0)
+            break;
+        SDL_PutAudioStreamData(stream, buf, frames * 4);
+        additional_amount -= frames * 4;
+    }
+}
+
+static void start_mario_audio(const uint8_t *rom)
+{
+    p_audio_init(rom);
+    const SDL_AudioSpec spec = { SDL_AUDIO_S16, 2, 32000 };
+    // ponytail: own stream at fixed volume; route through the game's sound volume if it's too loud
+    SDL_AudioStream *stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, mario_audio_callback, NULL);
+    if (stream == NULL)
+    {
+        WARNLOG("Mario will be silent: %s", SDL_GetError());
+        return;
+    }
+    SDL_ResumeAudioStreamDevice(stream);
+}
+
 static const char *sm64_load(void)
 {
     if (sm64_ready)
@@ -109,8 +142,10 @@ static const char *sm64_load(void)
     *(void **)&p_mario_delete = (void *)SDL_LoadFunction(lib, "sm64_mario_delete");
     *(void **)&p_set_mario_position = (void *)SDL_LoadFunction(lib, "sm64_set_mario_position");
     *(void **)&p_set_mario_health = (void *)SDL_LoadFunction(lib, "sm64_set_mario_health");
+    *(void **)&p_audio_init = (void *)SDL_LoadFunction(lib, "sm64_audio_init");
+    *(void **)&p_audio_tick = (void *)SDL_LoadFunction(lib, "sm64_audio_tick");
     if (!p_global_init || !p_static_surfaces_load || !p_mario_create || !p_mario_tick
-     || !p_mario_delete || !p_set_mario_position || !p_set_mario_health)
+     || !p_mario_delete || !p_set_mario_position || !p_set_mario_health || !p_audio_init || !p_audio_tick)
     {
         SDL_UnloadObject(lib);
         return SM64_LIB_FILE " is missing functions, rebuild libsm64";
@@ -129,6 +164,7 @@ static const char *sm64_load(void)
         return SM64_ROM_FILE " is not a US Super Mario 64 ROM in .z64 byte order";
     }
     p_global_init(rom, mario_texture);
+    start_mario_audio(rom);
     sm64_ready = true;
     JUSTLOG("libsm64 initialized");
     return NULL;
