@@ -50,7 +50,7 @@ extern "C" {
 #define SM64_LIB_FILE "libsm64.so"
 #endif
 
-// ponytail: hand-tuned so Mario (~160 units tall) matches a dwarf (~256 coords); calibrate in game
+// ponytail: hand-tuned so Mario (~160 units tall) matches an imp or dwarf (both ~256 coords); calibrate in game
 #define SM64_SCALE 1.6f
 // Collision is loaded only this many subtiles around an origin near Mario:
 // libsm64 scans every static surface on each query, and SM64 space ends at +-8192.

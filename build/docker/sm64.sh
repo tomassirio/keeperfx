@@ -1,11 +1,11 @@
 #!/bin/sh
 # Builds sm64.dll (libsm64, for the "mario" console command) and runs the
 # collision check, inside the kfx-mingw image (see mingw.Dockerfile).
-# Given your own ROM, also generates the Mario dwarf mod from it.
+# Given your own ROM, also generates the Mario imp mod from it.
 # Run from the repo root after building keeperfx once (SDL3 headers come from out/docker-mingw/deps).
 #   build/docker/sm64.sh [path/to/sm64.us.z64]
 # Output: out/libsm64/dist/sm64.dll - copy it next to keeperfx.exe, together
-# with the ROM; out/mods/mario_dwarf - copy into the game's mods/ folder.
+# with the ROM; out/mods/mario_imp - copy into the game's mods/ folder.
 set -e
 rm -f out/sm64.us.z64
 if [ -n "$1" ]; then
@@ -34,7 +34,7 @@ gcc -std=gnu11 -w -Isrc -I/tmp/native/src \
     tests/sm64/collision_check.c -o /tmp/collision_check /tmp/native/dist/libsm64.so -lm \
     -Wl,--unresolved-symbols=ignore-all  # game functions the check never calls
 LD_LIBRARY_PATH=/tmp/native/dist /tmp/collision_check
-python3 tests/sm64/render_check.py
+python3 -B tests/sm64/render_check.py
 if [ -f out/sm64.us.z64 ]; then
     python3 -I tools/sm64/make_mario_mod.py --lib /tmp/native/dist/libsm64.so --rom out/sm64.us.z64 --out out/mods
 fi
