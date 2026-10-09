@@ -373,6 +373,13 @@ void sm64_mario_update(struct Thing *thing)
         p_set_mario_health(mario_id, SM64_FULL_HEALTH);
         p_mario_tick(mario_id, &in, &mario_state, &mario_geometry);
     }
+    // ponytail: temporary, to find why jump/crouch don't work; remove once fixed
+    static uint8_t prev_a, prev_z;
+    if ((in.buttonA != prev_a) || (in.buttonZ != prev_z))
+        JUSTLOG("Mario input: jump %d crouch %d, action now 0x%08x, height %.0f", in.buttonA, in.buttonZ,
+            (unsigned)mario_state.action, mario_state.position[1]);
+    prev_a = in.buttonA;
+    prev_z = in.buttonZ;
 
     struct Coord3d pos;
     pos.x.val = clamp(subtile_coord(origin_stl_x, 0) + lroundf(mario_state.position[0] * SM64_SCALE), 0, subtile_coord(game.map_subtiles_x, 0) - 1);
